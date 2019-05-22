@@ -517,6 +517,11 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 	 * Overridden method of {@link HttpServletBean}, invoked after any bean properties
 	 * have been set. Creates this servlet's WebApplicationContext.
 	 */
+	//从 ServletContext 中获取 ContextLoaderListener 创建的容器
+	//若 this.webApplicationContext != null 条件成立，仅设置父容器和刷新容器即可
+	//尝试从 ServletContext 中获取容器，若容器不为空，则无需执行步骤4
+	//创建容器，并将 rootContext 作为父容器
+	//设置容器到 ServletContext 中
 	@Override
 	protected final void initServletBean() throws ServletException {
 		getServletContext().log("Initializing Spring " + getClass().getSimpleName() + " '" + getServletName() + "'");
@@ -526,6 +531,7 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 		long startTime = System.currentTimeMillis();
 
 		try {
+			// 初始化容器
 			this.webApplicationContext = initWebApplicationContext();
 			initFrameworkServlet();
 		}
@@ -557,10 +563,23 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 	 * @see #setContextConfigLocation
 	 */
 	protected WebApplicationContext initWebApplicationContext() {
+		// 从 ServletContext 中获取容器，也就是 ContextLoaderListener 创建的容器
 		WebApplicationContext rootContext =
 				WebApplicationContextUtils.getWebApplicationContext(getServletContext());
 		WebApplicationContext wac = null;
 
+
+		/*
+		 * 若下面的条件成立，则需要从外部设置 webApplicationContext。有两个途径可以设置
+		 * webApplicationContext，以 DispatcherServlet 为例：
+		 *    1. 通过 DispatcherServlet 有参构造方法传入 WebApplicationContext 对象
+		 *    2. 将 DispatcherServlet 配置到其他容器中，由其他容器通过
+		 *       setApplicationContext 方法进行设置
+		 *
+		 * 途径1 可参考 AbstractDispatcherServletInitializer 中的
+		 * registerDispatcherServlet 方法源码。一般情况下，代码执行到此处，
+		 * this.webApplicationContext 为 null，大家可自行调试进行验证。
+		 */
 		if (this.webApplicationContext != null) {
 			// A context instance was injected at construction time -> use it
 			wac = this.webApplicationContext;
@@ -583,9 +602,11 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 			// has been registered in the servlet context. If one exists, it is assumed
 			// that the parent context (if any) has already been set and that the
 			// user has performed any initialization such as setting the context id
+			// 尝试从 ServletContext 中获取容器
 			wac = findWebApplicationContext();
 		}
 		if (wac == null) {
+			// 创建容器，并将 rootContext 作为父容器
 			// No context instance is defined for this servlet -> create a local one
 			wac = createWebApplicationContext(rootContext);
 		}
