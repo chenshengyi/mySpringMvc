@@ -111,6 +111,7 @@ public abstract class HttpServletBean extends HttpServlet implements Environment
 	 * {@code ConfigurableEnvironment}
 	 */
 	@Override
+	// 实现自 EnvironmentAware 接口，自动注入
 	public void setEnvironment(Environment environment) {
 		Assert.isInstanceOf(ConfigurableEnvironment.class, environment, "ConfigurableEnvironment required");
 		this.environment = (ConfigurableEnvironment) environment;
@@ -138,24 +139,59 @@ public abstract class HttpServletBean extends HttpServlet implements Environment
 		return new StandardServletEnvironment();
 	}
 
+
 	/**
 	 * Map config parameters onto bean properties of this servlet, and
 	 * invoke subclass initialization.
 	 * @throws ServletException if bean properties are invalid (or required
 	 * properties are missing), or if subclass initialization fails.
 	 */
+	//  spring结合servlet
 	@Override
 	public final void init() throws ServletException {
 
 		// Set bean properties from init parameters.
 		// 获取 ServletConfig 中的配置信息
+		// <1> 解析 <init-param /> 标签，封装到 PropertyValues pvs 中
+		//ServletConfigPropertyValues 是 HttpServletBean 的私有静态类，继承 MutablePropertyValues 类
 		PropertyValues pvs = new ServletConfigPropertyValues(getServletConfig(), this.requiredProperties);
 		if (!pvs.isEmpty()) {
 			try {
+				// <2.1> 将当前的这个 Servlet 对象，转化成一个 BeanWrapper 对象。从而能够以 Spring 的方式来将 pvs 注入到该 BeanWrapper 对象中
+				//简单来说，BeanWrapper 是 Spring 提供的一个用来操作 Java Bean 属性的工具，使用它可以直接修改一个对象的属性。
 				BeanWrapper bw = PropertyAccessorFactory.forBeanPropertyAccess(this);
 				ResourceLoader resourceLoader = new ServletContextResourceLoader(getServletContext());
+				// <2.2> 注册自定义属性编辑器，一旦碰到 Resource 类型的属性，将会使用 ResourceEditor 进行解析
 				bw.registerCustomEditor(Resource.class, new ResourceEditor(resourceLoader, getEnvironment()));
+				// <2.3> 空实现，留给子类覆盖
 				initBeanWrapper(bw);
+				// <2.4> 以 Spring 的方式来将 pvs 注入到该 BeanWrapper 对象中
+				//例子
+				//// web.xml
+				//
+				//<servlet>
+				//    <servlet-name>spring</servlet-name>
+				//    <servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+				//    <init-param>
+				//        <param-name>contextConfigLocation</param-name>
+				//        <param-value>/WEB-INF/spring-servlet.xml</param-value>
+				//    </init-param>
+				//    <load-on-startup>1</load-on-startup>
+				//</servlet>
+				//<servlet-mapping>
+				//    <servlet-name>spring</servlet-name>
+				//    <url-pattern>*.do</url-pattern>
+				//</servlet-mapping>
+				//此处有配置了 contextConfigLocation 属性，那么通过 <2.4> 处的逻辑，会反射设置到 FrameworkServlet.contextConfigLocation 属性。代码如下：
+				//// FrameworkServlet.java
+				//
+				///** Explicit context config location. */
+				//@Nullable
+				//private String contextConfigLocation;
+				//
+				//public void setContextConfigLocation(@Nullable String contextConfigLocation) {
+				//	this.contextConfigLocation = contextConfigLocation;
+				//}
 				bw.setPropertyValues(pvs, true);
 			}
 			catch (BeansException ex) {
@@ -206,6 +242,8 @@ public abstract class HttpServletBean extends HttpServlet implements Environment
 	/**
 	 * PropertyValues implementation created from ServletConfig init parameters.
 	 */
+	//<1> 处，遍历 ServletConfig 的初始化参数集合，添加到 ServletConfigPropertyValues 中；
+	//<2> 处，判断要求的属性是否齐全。如果不齐全，则抛出 ServletException 异常。
 	private static class ServletConfigPropertyValues extends MutablePropertyValues {
 
 		/**
@@ -217,15 +255,18 @@ public abstract class HttpServletBean extends HttpServlet implements Environment
 		 */
 		public ServletConfigPropertyValues(ServletConfig config, Set<String> requiredProperties)
 				throws ServletException {
-
+			// 获得缺失的属性的集合
 			Set<String> missingProps = (!CollectionUtils.isEmpty(requiredProperties) ?
 					new HashSet<>(requiredProperties) : null);
 
+			// <1> 遍历 ServletConfig 的初始化参数集合，添加到 ServletConfigPropertyValues 中，并从 missingProps 移除
 			Enumeration<String> paramNames = config.getInitParameterNames();
 			while (paramNames.hasMoreElements()) {
 				String property = paramNames.nextElement();
 				Object value = config.getInitParameter(property);
+				// 添加到 ServletConfigPropertyValues 中
 				addPropertyValue(new PropertyValue(property, value));
+				// 从 missingProps 中移除
 				if (missingProps != null) {
 					missingProps.remove(property);
 				}
