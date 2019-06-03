@@ -938,10 +938,14 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 	protected void service(HttpServletRequest request, HttpServletResponse response)
 			throws ServletException, IOException {
 
+		// <1> 获得请求方法
 		HttpMethod httpMethod = HttpMethod.resolve(request.getMethod());
 		if (httpMethod == HttpMethod.PATCH || httpMethod == null) {
+			// <2.1> 处理 PATCH 请求
+			//因为 HttpServlet 默认没提供 #doPatch(HttpServletRequest request, HttpServletResponse response) 方法，所以只能通过父类的
 			processRequest(request, response);
 		}
+		// <2.2> 调用父类，处理其它请求
 		else {
 			super.service(request, response);
 		}
@@ -1004,14 +1008,17 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 	protected void doOptions(HttpServletRequest request, HttpServletResponse response)
 			throws ServletException, IOException {
 
+		// 如果 dispatchOptionsRequest 为 true ，则处理该请求
 		if (this.dispatchOptionsRequest || CorsUtils.isPreFlightRequest(request)) {
 			processRequest(request, response);
+			// 如果响应 Header 包含 "Allow" ，则不需要交给父方法处理
 			if (response.containsHeader("Allow")) {
 				// Proper OPTIONS response coming from a handler - we're done.
 				return;
 			}
 		}
 
+		// 调用父方法，并在响应 Header 的 "Allow" 增加 PATCH 的值
 		// Use response wrapper in order to always add PATCH to the allowed methods
 		super.doOptions(request, new HttpServletResponseWrapper(response) {
 			@Override
@@ -1052,6 +1059,7 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 			throws ServletException, IOException {
 
 		long startTime = System.currentTimeMillis();
+		// <2> 记录异常
 		Throwable failureCause = null;
 
 		LocaleContext previousLocaleContext = LocaleContextHolder.getLocaleContext();
@@ -1066,9 +1074,12 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 		initContextHolders(request, localeContext, requestAttributes);
 
 		try {
+			// <7> 执行真正的逻辑
+			//该抽象方法由 DispatcherServlet 实现，所以这就是 DispatcherServlet 处理请求的真正入口
 			doService(request, response);
 		}
 		catch (ServletException | IOException ex) {
+			//记录抛出的异常，最终在 finally 的代码段中使用
 			failureCause = ex;
 			throw ex;
 		}
@@ -1082,7 +1093,9 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 			if (requestAttributes != null) {
 				requestAttributes.requestCompleted();
 			}
+			//打印请求日志，并且日志级别为 DEBUG
 			logResult(request, response, failureCause, asyncManager);
+			//发布 org.springframework.web.context.support.ServletRequestHandledEvent 事件
 			publishRequestHandledEvent(request, response, startTime, failureCause);
 		}
 	}
@@ -1198,9 +1211,11 @@ public abstract class FrameworkServlet extends HttpServletBean implements Applic
 	private void publishRequestHandledEvent(HttpServletRequest request, HttpServletResponse response,
 			long startTime, @Nullable Throwable failureCause) {
 
+		// 如果开启发布事件
 		if (this.publishEvents && this.webApplicationContext != null) {
 			// Whether or not we succeeded, publish an event.
 			long processingTime = System.currentTimeMillis() - startTime;
+			//// 创建 ServletRequestHandledEvent 事件，并进行发布
 			this.webApplicationContext.publishEvent(
 					new ServletRequestHandledEvent(this,
 							request.getRequestURI(), request.getRemoteAddr(),
